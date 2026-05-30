@@ -1,0 +1,20 @@
+Create a new Falcor RenderPass (RadianceProbePass) 
+→ add CPU + GPU resources for a 3D probe grid 
+→ implement a Slang compute shader that traces rays from each probe and stores radiance into a 3D texture 
+→ visualize/debug probe positions and stored lighting 
+→ add the pass into the RenderGraph before final shading 
+→ reduce PathTracer bounce count to mainly direct lighting 
+→ inside PathTracer shading replace indirect bounce tracing with probe texture lookup 
+	+ trilinear interpolation 
+→ combine direct lighting + probe GI 
+→ benchmark FPS and image quality against original 3-bounce PathTracer 
+→ improve probe density, sampling count, and leakage handling
+
+
+DETAILED RAY PIPLINE USING PRECOMPUTED PROBES:
+Camera ray
+→ first surface hit
+→ compute direct lighting normally
+→ instead of tracing many indirect diffuse bounces, sample nearby radiance probes
+→ interpolate GI contribution
+→ combine results
