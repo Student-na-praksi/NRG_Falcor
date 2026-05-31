@@ -1,0 +1,6 @@
+Benchmark frames 100-500: 78.74 FPS (12.70 ms/frame)
+Benchmark frames 100-500: 80.58 FPS (12.41 ms/frame)
+Benchmark frames 100-500: 89.38 FPS (11.19 ms/frame)
+Benchmark frames 100-500: 142.49 FPS (7.02 ms/frame)
+Benchmark frames 100-500: 147.40 FPS (6.78 ms/frame)
+Benchmark frames 100-500: 58.03 FPS (17.23 ms/frame)

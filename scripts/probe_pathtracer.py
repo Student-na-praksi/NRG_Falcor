@@ -1,8 +1,12 @@
 from falcor import *
+import time
+from pathlib import Path
 
 
 USE_PROBES = True
 VISUALISE_PROBES = False
+BENCHMARK_START_FRAME = 100
+BENCHMARK_END_FRAME = 500
 
 
 def render_graph_ProbePathTracer():
@@ -61,9 +65,9 @@ def render_graph_ProbePathTracer():
 # OUTSIDE SCENE
 # m.loadScene("C:/Users/Uporabnik/Faks_local/NRG/Falcor/media/Bistro_v5_2/BistroExterior.pyscene")
 # INSIDE SCENE
-# m.loadScene("C:/Users/Uporabnik/Faks_local/NRG/Falcor/media/Bistro_v5_2/BistroInterior_Wine.pyscene")
+m.loadScene("C:/Users/Uporabnik/Faks_local/NRG/Falcor/media/Bistro_v5_2/BistroInterior_Wine.pyscene")
 # MY SCENE
-m.loadScene("C:/Users/Uporabnik/Faks_local/NRG/Falcor/media/Pillars/Pillars.pyscene")
+# m.loadScene("C:/Users/Uporabnik/Faks_local/NRG/Falcor/media/Pillars/Pillars.pyscene")
 
 try:
     m.scene.setIsAnimated(False)
@@ -76,5 +80,25 @@ try:
 except NameError:
     pass
 
-for _ in range(1):
+benchmark_started = False
+benchmark_start_time = 0.0
+
+for frame in range(1, BENCHMARK_END_FRAME + 1):
+    if frame == BENCHMARK_START_FRAME:
+        benchmark_started = True
+        benchmark_start_time = time.perf_counter()
+
     m.renderFrame()
+
+    if frame == BENCHMARK_END_FRAME and benchmark_started:
+        benchmark_end_time = time.perf_counter()
+        measured_frames = BENCHMARK_END_FRAME - BENCHMARK_START_FRAME + 1
+        elapsed = benchmark_end_time - benchmark_start_time
+        avg_fps = measured_frames / elapsed if elapsed > 0.0 else 0.0
+        avg_ms = (elapsed * 1000.0) / measured_frames if measured_frames > 0 else 0.0
+        result = f"Benchmark frames {BENCHMARK_START_FRAME}-{BENCHMARK_END_FRAME}: {avg_fps:.2f} FPS ({avg_ms:.2f} ms/frame)"
+        print(result)
+
+        log_path = Path(__file__).with_name("probe_pathtracer_benchmark.txt")
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write(result + "\n")

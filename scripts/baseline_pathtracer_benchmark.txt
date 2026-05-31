@@ -1,0 +1,6 @@
+[baseline_pathtracer.py] Benchmark frames 100-500: 147.48 FPS (6.78 ms/frame)
+[baseline_pathtracer.py] Benchmark frames 100-500: 130.56 FPS (7.66 ms/frame)
+[baseline_pathtracer.py] Benchmark frames 100-500: 136.67 FPS (7.32 ms/frame)
+[baseline_pathtracer.py] Benchmark frames 100-500: 149.21 FPS (6.70 ms/frame)
+[baseline_pathtracer.py] Benchmark frames 100-500: 43.27 FPS (23.11 ms/frame)
+[baseline_pathtracer.py] Benchmark frames 100-500: 34.39 FPS (29.08 ms/frame)
