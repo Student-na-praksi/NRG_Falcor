@@ -5,6 +5,8 @@
 #include "RenderGraph/RenderPassHelpers.h"
 
 #include <algorithm>
+#include <cmath>
+#include <vector>
 
 namespace
 {
@@ -13,6 +15,7 @@ const char kProbeVisualizeFile[] = "RenderPasses/RadianceProbePass/ProbeVisualiz
 
 const char kInput[] = "input";
 const char kPosW[] = "posW";
+const char kProbeRadiance[] = "probeRadiance";
 const char kOutput[] = "output";
 
 const char kGridSize[] = "gridSize";
@@ -31,6 +34,24 @@ template<typename T>
 constexpr const T& clamp(const T& v, const T& lo, const T& hi)
 {
     return std::min(std::max(v, lo), hi);
+}
+
+float3 probeHeatmap(float t)
+{
+    t = std::clamp(t, 0.f, 1.f);
+
+    const float3 c0 = float3(0.06f, 0.02f, 0.18f); // deep purple
+    const float3 c1 = float3(0.10f, 0.18f, 0.62f); // blue
+    const float3 c2 = float3(0.00f, 0.68f, 0.82f); // cyan
+    const float3 c3 = float3(0.35f, 0.88f, 0.22f); // green
+    const float3 c4 = float3(1.00f, 0.92f, 0.18f); // yellow
+    const float3 c5 = float3(0.98f, 0.98f, 1.00f); // near white
+
+    if (t < 0.20f) return lerp(c0, c1, t / 0.20f);
+    if (t < 0.45f) return lerp(c1, c2, (t - 0.20f) / 0.25f);
+    if (t < 0.70f) return lerp(c2, c3, (t - 0.45f) / 0.25f);
+    if (t < 0.90f) return lerp(c3, c4, (t - 0.70f) / 0.20f);
+    return lerp(c4, c5, (t - 0.90f) / 0.10f);
 }
 
 uint3 sanitizeGridSize(uint3 v)
@@ -112,7 +133,13 @@ RenderPassReflection RadianceProbePass::reflect(const CompileData& compileData)
         .texture2D()
         .format(ResourceFormat::RGBA32Float)
         .flags(RenderPassReflection::Field::Flags::Optional);
+    reflector.addOutput(kProbeRadiance, "3D probe radiance volume")
+        .texture3D(mGridSize.x, mGridSize.y, mGridSize.z)
+        .bindFlags(ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource)
+        .format(ResourceFormat::RGBA32Float);
     reflector.addOutput(kOutput, "Radiance probe visualization output")
+        .texture2D()
+        .flags(RenderPassReflection::Field::Flags::Optional)
         .bindFlags(ResourceBindFlags::UnorderedAccess)
         .format(ResourceFormat::RGBA32Float);
 
@@ -234,15 +261,57 @@ void RadianceProbePass::updateProbes(RenderContext* pRenderContext)
     mpProbeUpdatePass->execute(pRenderContext, mGridSize);
 }
 
+void RadianceProbePass::updateProbeDebugMaterials(const float4* pProbeData)
+{
+    if (!mpScene || !pProbeData)
+        return;
+
+    const uint32_t probeCount = mGridSize.x * mGridSize.y * mGridSize.z;
+    if (probeCount == 0)
+        return;
+
+    float maxLuminance = 0.f;
+    for (uint32_t i = 0; i < probeCount; ++i)
+    {
+        const float3 radiance = pProbeData[i].xyz();
+        maxLuminance = std::max(maxLuminance, dot(radiance, float3(0.2126f, 0.7152f, 0.0722f)));
+    }
+
+    const float responseScale = 6.0f;
+    const float responseDenom = std::log2(1.f + maxLuminance * responseScale);
+    const float invResponseDenom = responseDenom > 0.f ? 1.f / responseDenom : 0.f;
+
+    for (uint32_t i = 0; i < probeCount; ++i)
+    {
+        const float3 radiance = pProbeData[i].xyz();
+        const float lum = dot(radiance, float3(0.2126f, 0.7152f, 0.0722f));
+        const float normalized = responseDenom > 0.f ? std::log2(1.f + lum * responseScale) * invResponseDenom : 0.f;
+        const float tone = std::sqrt(std::clamp(normalized, 0.f, 1.f));
+        const float3 color = probeHeatmap(tone);
+
+        const std::string materialName = "ProbeDebugMaterial_" + std::to_string(i);
+        auto pMaterial = mpScene->getMaterialByName(materialName);
+        if (!pMaterial)
+            continue;
+
+        if (auto pBasic = pMaterial->toBasicMaterial())
+        {
+            pBasic->setBaseColor(float4(color, 1.f));
+        }
+    }
+}
+
 void RadianceProbePass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
     const auto& pOutput = renderData.getTexture(kOutput);
     const auto& pInput = renderData.getTexture(kInput);
     const auto& pPosW = renderData.getTexture(kPosW);
+    const auto& pProbeRadiance = renderData.getTexture(kProbeRadiance);
 
     if (!mpScene || !mpProbeUpdatePass || !mpProbeVisualizePass || !mpProbeRadiance)
     {
-        pRenderContext->clearUAV(pOutput->getUAV().get(), float4(0.f));
+        if (pOutput)
+            pRenderContext->clearUAV(pOutput->getUAV().get(), float4(0.f));
         return;
     }
 
@@ -255,10 +324,26 @@ void RadianceProbePass::execute(RenderContext* pRenderContext, const RenderData&
     if (mUpdateEveryFrame || mNeedsProbeUpdate)
     {
         updateProbes(pRenderContext);
+        const auto probeBlobSize = mpProbeRadiance->getSubresourceLayout(0).getTotalByteSize();
+        std::vector<float4> probeData(probeBlobSize / sizeof(float4));
+        mpProbeRadiance->getSubresourceBlob(0, probeData.data(), probeBlobSize);
+        updateProbeDebugMaterials(probeData.data());
         mNeedsProbeUpdate = false;
     }
 
-    mFrameDim = uint2(pOutput->getWidth(), pOutput->getHeight());
+    if (pOutput)
+    {
+        mFrameDim = uint2(pOutput->getWidth(), pOutput->getHeight());
+    }
+    else if (pInput)
+    {
+        mFrameDim = uint2(pInput->getWidth(), pInput->getHeight());
+    }
+    else
+    {
+        mFrameDim = uint2(0, 0);
+    }
+
     if (mpProbeVisualizePass->getProgram()->addDefine("INPUT_VALID", pInput ? "1" : "0"))
         mpProbeVisualizePass->setVars(nullptr);
     if (mpProbeVisualizePass->getProgram()->addDefine("POSW_VALID", pPosW ? "1" : "0"))
@@ -277,9 +362,17 @@ void RadianceProbePass::execute(RenderContext* pRenderContext, const RenderData&
     mpProbeVisualizePass->getRootVar()["gInput"] = pInput;
     if (pPosW)
         mpProbeVisualizePass->getRootVar()["gPosW"] = pPosW;
-    mpProbeVisualizePass->getRootVar()["gOutput"] = pOutput;
-    mpProbeVisualizePass->getRootVar()["gProbeRadiance"] = mpProbeRadiance;
-    mpProbeVisualizePass->execute(pRenderContext, mFrameDim.x, mFrameDim.y);
+    if (pOutput)
+    {
+        mpProbeVisualizePass->getRootVar()["gOutput"] = pOutput;
+        mpProbeVisualizePass->getRootVar()["gProbeRadiance"] = mpProbeRadiance;
+        mpProbeVisualizePass->execute(pRenderContext, mFrameDim.x, mFrameDim.y);
+    }
+
+    if (pProbeRadiance)
+    {
+        pRenderContext->copyResource(pProbeRadiance.get(), mpProbeRadiance.get());
+    }
 }
 
 void RadianceProbePass::renderUI(Gui::Widgets& widget)

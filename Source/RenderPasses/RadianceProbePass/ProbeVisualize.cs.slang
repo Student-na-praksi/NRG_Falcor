@@ -30,6 +30,8 @@ Texture2D<float4> gPosW;
 Texture3D<float4> gProbeRadiance;
 RWTexture2D<float4> gOutput;
 
+static const uint kProbeVizScale = 16;
+
 float3 getProbePosition(uint3 coord)
 {
     return gGridMin + float3(coord) * gGridSpacing;
@@ -70,6 +72,11 @@ float3 sampleProbeRadiance(float3 posW)
     return lerp(r0, r1, frac.z);
 }
 
+float3 probeToDisplayColor(float3 probeColor)
+{
+    return pow(probeColor / (probeColor + 1.f), 1.f / 2.2f);
+}
+
 [numthreads(16, 16, 1)]
 void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
@@ -85,17 +92,29 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 
     if (gVisualizeProbes != 0)
     {
-        #if POSW_VALID
-            const float3 probeColor = sampleProbeRadiance(gPosW[pixel].xyz);
-            color = lerp(color, pow(probeColor / (probeColor + 1.f), 1.f / 2.2f), 0.65f);
-        #else
-            const float2 uv = (float2(pixel) + 0.5f) / float2(gFrameDim);
-            const uint z = min(uint(uv.y * gGridSize.z), gGridSize.z - 1);
-            const uint x = min(uint(uv.x * gGridSize.x), gGridSize.x - 1);
-            const uint y = gGridSize.y / 2;
-            const float3 probeColor = gProbeRadiance.Load(int4(x, y, z, 0)).rgb;
-            color = pow(probeColor / (probeColor + 1.f), 1.f / 2.2f);
-        #endif
+        const uint sliceWidth = gGridSize.x * kProbeVizScale;
+        const uint sliceHeight = gGridSize.y * kProbeVizScale;
+        const uint atlasHeight = sliceHeight * gGridSize.z;
+
+        if (pixel.x >= sliceWidth || pixel.y >= atlasHeight)
+        {
+            gOutput[pixel] = float4(0.f, 0.f, 0.f, 1.f);
+            return;
+        }
+
+        const uint3 probeCoord = uint3(
+            min(pixel.x / kProbeVizScale, gGridSize.x - 1),
+            min((pixel.y % sliceHeight) / kProbeVizScale, gGridSize.y - 1),
+            min(pixel.y / sliceHeight, gGridSize.z - 1)
+        );
+
+        float3 probeColor = gProbeRadiance.Load(int4(probeCoord, 0)).rgb;
+        color = probeToDisplayColor(probeColor);
+
+        const bool onVerticalLine = (pixel.x % kProbeVizScale) == 0;
+        const bool onHorizontalLine = (pixel.y % kProbeVizScale) == 0;
+        if (onVerticalLine || onHorizontalLine)
+            color *= 0.35f;
     }
     else
     {

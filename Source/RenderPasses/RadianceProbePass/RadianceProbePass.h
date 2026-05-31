@@ -33,6 +33,7 @@ private:
     void createProbeTexture();
     void updateGridFromSceneBounds();
     void updateProbes(RenderContext* pRenderContext);
+    void updateProbeDebugMaterials(const float4* pProbeData);
 
     ref<Scene> mpScene;
     ref<ComputePass> mpProbeUpdatePass;

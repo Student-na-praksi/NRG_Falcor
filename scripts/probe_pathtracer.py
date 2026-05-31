@@ -2,6 +2,7 @@ from falcor import *
 
 
 USE_PROBES = True
+VISUALISE_PROBES = False
 
 
 def render_graph_ProbePathTracer():
@@ -29,12 +30,17 @@ def render_graph_ProbePathTracer():
             {
                 "gridSize": uint3(8, 4, 8),
                 "autoFitToScene": True,
-                "visualizeProbes": False,
+                "visualizeProbes": VISUALISE_PROBES,
                 "updateEveryFrame": False,
                 "probeContributionScale": 0.65,
+                "raysPerProbe": 8,
             },
         )
         g.addPass(probes, "RadianceProbePass")
+
+    if not VISUALISE_PROBES:
+        accumulate = createPass("AccumulatePass", {"enabled": True, "precisionMode": "Single"})
+        g.addPass(accumulate, "AccumulatePass")
 
     tone_mapper = createPass("ToneMapper", {"autoExposure": False, "exposureCompensation": 0.0})
     g.addPass(tone_mapper, "ToneMapper")
@@ -42,17 +48,23 @@ def render_graph_ProbePathTracer():
     g.addEdge("VBufferRT.vbuffer", "DirectPathTracer.vbuffer")
     g.addEdge("VBufferRT.viewW", "DirectPathTracer.viewW")
     if USE_PROBES:
-        g.addEdge("DirectPathTracer.color", "RadianceProbePass.input")
-        g.addEdge("DirectPathTracer.reflectionPosW", "RadianceProbePass.posW")
+        g.addEdge("RadianceProbePass.probeRadiance", "DirectPathTracer.probeRadiance")
+    if VISUALISE_PROBES:
         g.addEdge("RadianceProbePass.output", "ToneMapper.src")
     else:
-        g.addEdge("DirectPathTracer.color", "ToneMapper.src")
+        g.addEdge("DirectPathTracer.color", "AccumulatePass.input")
+        g.addEdge("AccumulatePass.output", "ToneMapper.src")
 
     g.markOutput("ToneMapper.dst")
     return g
 
+# OUTSIDE SCENE
+# m.loadScene("C:/Users/Uporabnik/Faks_local/NRG/Falcor/media/Bistro_v5_2/BistroExterior.pyscene")
+# INSIDE SCENE
+# m.loadScene("C:/Users/Uporabnik/Faks_local/NRG/Falcor/media/Bistro_v5_2/BistroInterior_Wine.pyscene")
+# MY SCENE
+m.loadScene("C:/Users/Uporabnik/Faks_local/NRG/Falcor/media/Pillars/Pillars.pyscene")
 
-m.loadScene("C:/Users/Uporabnik/Faks_local/NRG/Falcor/media/Bistro_v5_2/BistroExterior.pyscene")
 try:
     m.scene.setIsAnimated(False)
 except Exception:

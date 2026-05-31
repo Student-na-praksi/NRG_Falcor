@@ -7,8 +7,8 @@ Create a new Falcor RenderPass (RadianceProbePass)
 → inside PathTracer shading replace indirect bounce tracing with probe texture lookup
     + trilinear interpolation
 → combine direct lighting + probe GI
-→ benchmark FPS and image quality against original 3-bounce PathTracer
 → improve probe density, sampling count, and leakage handling.
+→ benchmark FPS and image quality against original 3-bounce PathTracer
 
 
 Poglej si že obstoječe implementacije, master thesis v češčini global ilumination probes,

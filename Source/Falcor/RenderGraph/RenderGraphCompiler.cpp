@@ -393,7 +393,19 @@ RenderPass::CompileData RenderGraphCompiler::prepPassCompilationData(const PassD
     {
         if (hasPrefix(name, passData.name + "."))
         {
+            if (!pRes)
+            {
+                logWarning("Render graph external resource '{}' is null. Skipping binding for pass '{}'.", name, passData.name);
+                continue;
+            }
+
             auto pTex = pRes->asTexture();
+            if (!pTex)
+            {
+                logWarning("Render graph external resource '{}' is not a texture. Skipping binding for pass '{}'.", name, passData.name);
+                continue;
+            }
+
             std::string resName = name.substr((passData.name + ".").size());
             compileData.connectedResources.addInput(resName, "External input resource")
                 .format(pTex->getFormat())

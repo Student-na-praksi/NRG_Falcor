@@ -3742,6 +3742,21 @@ namespace Falcor
 
         tlas.updateMode = mTlasUpdateMode;
 
+        // Upload instance data before querying prebuild info.
+        // Some backends require a non-null instance descriptor pointer even for an empty TLAS.
+        GpuMemoryHeap::Allocation instanceDescAllocation;
+        if (inputs.descCount > 0)
+        {
+            instanceDescAllocation = mpDevice->getUploadHeap()->allocate(inputs.descCount * sizeof(RtInstanceDesc), sizeof(RtInstanceDesc));
+            std::memcpy(instanceDescAllocation.pData, mInstanceDescs.data(), inputs.descCount * sizeof(RtInstanceDesc));
+        }
+        else
+        {
+            instanceDescAllocation = mpDevice->getUploadHeap()->allocate(sizeof(RtInstanceDesc), sizeof(RtInstanceDesc));
+            std::memset(instanceDescAllocation.pData, 0, sizeof(RtInstanceDesc));
+        }
+        inputs.instanceDescs = instanceDescAllocation.getGpuAddress();
+
         // On first build for the scene, create scratch buffer and cache prebuild info. As long as INSTANCE_DESC count doesn't change, we can reuse these
         if (mpTlasScratch == nullptr)
         {
@@ -3785,15 +3800,6 @@ namespace Falcor
         }
 
         FALCOR_ASSERT(tlas.pTlasBuffer && tlas.pTlasBuffer->getGfxResource() && mpTlasScratch->getGfxResource());
-
-        // Upload instance data
-        if (inputs.descCount > 0)
-        {
-            GpuMemoryHeap::Allocation allocation = mpDevice->getUploadHeap()->allocate(inputs.descCount * sizeof(RtInstanceDesc), sizeof(RtInstanceDesc));
-            std::memcpy(allocation.pData, mInstanceDescs.data(), inputs.descCount * sizeof(RtInstanceDesc));
-            asDesc.inputs.instanceDescs = allocation.getGpuAddress();
-            mpDevice->getUploadHeap()->release(allocation);
-        }
         asDesc.scratchData = mpTlasScratch->getGpuAddress();
         asDesc.dest = tlas.pTlasObject.get();
 
@@ -3806,6 +3812,8 @@ namespace Falcor
         // Create TLAS
         pRenderContext->buildAccelerationStructure(asDesc, 0, nullptr);
         pRenderContext->uavBarrier(tlas.pTlasBuffer.get());
+
+        mpDevice->getUploadHeap()->release(instanceDescAllocation);
 
         mTlasCache[rayTypeCount] = tlas;
         updateRaytracingTLASStats();

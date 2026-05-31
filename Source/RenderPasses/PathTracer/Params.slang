@@ -92,6 +92,14 @@ struct PathTracerParams
     uint    seed = 0;                   ///< Random seed. This will get updated from the host depending on settings.
     uint2   _pad0;
 
+    // Probe GI parameters.
+    uint3   probeGridSize = { 0, 0, 0 };        ///< Size of the probe grid used for GI lookup.
+    float   probeContributionScale = 0.f;       ///< Strength of the probe-based indirect lighting term.
+    float3  probeGridMin = { 0.f, 0.f, 0.f };    ///< Minimum world-space corner of the probe grid.
+    uint    probeEnabled = 0;                   ///< True when a probe volume is bound.
+    float3  probeGridSpacing = { 1.f, 1.f, 1.f }; ///< World-space spacing between probes.
+    float   _pad1 = 0.f;
+
 #ifndef HOST_CODE
     /** Computes the offset into the tiled sample buffer for a given tile.
         The samples for all pixels are stored consecutively after this offset.

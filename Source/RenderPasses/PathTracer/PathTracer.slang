@@ -77,6 +77,7 @@ struct PathTracer
     Texture2D<float3> viewDir;                      ///< Optional view direction. Only valid when kUseViewDir == true.
     Texture2D<uint> sampleCount;                    ///< Optional input sample count buffer. Only valid when kSamplesPerPixel == 0.
     Texture2D<uint> sampleOffset;                   ///< Output offset into per-sample buffers. Only valid when kSamplesPerPixel == 0.
+    Texture3D<float4> probeRadiance;                ///< Optional probe radiance volume for indirect lighting.
 
     // Outputs
     RWStructuredBuffer<ColorType> sampleColor;      ///< Output per-sample color if kSamplesPerPixel != 1.
@@ -227,6 +228,36 @@ struct PathTracer
             guideData.setIndirectAlbedo(bsdfProperties.diffuseReflectionAlbedo + bsdfProperties.diffuseTransmissionAlbedo);
         }
         guideData.setReflectionPos(sd.posW);
+    }
+
+    float3 sampleProbeRadiance(float3 posW)
+    {
+        if (params.probeEnabled == 0 || params.probeGridSize.x == 0 || params.probeGridSize.y == 0 || params.probeGridSize.z == 0)
+            return float3(0.f);
+
+        float3 coord = (posW - params.probeGridMin) / params.probeGridSpacing;
+        const uint3 dimsMinusOne = max(params.probeGridSize, uint3(1, 1, 1)) - uint3(1, 1, 1);
+        coord = clamp(coord, float3(0.f), float3(dimsMinusOne));
+
+        const uint3 base = uint3(coord);
+        const float3 frac = coord - float3(base);
+        const uint3 maxCoord = params.probeGridSize - 1;
+        const uint3 c000 = min(base, maxCoord);
+        const uint3 c100 = min(base + uint3(1, 0, 0), maxCoord);
+        const uint3 c010 = min(base + uint3(0, 1, 0), maxCoord);
+        const uint3 c110 = min(base + uint3(1, 1, 0), maxCoord);
+        const uint3 c001 = min(base + uint3(0, 0, 1), maxCoord);
+        const uint3 c101 = min(base + uint3(1, 0, 1), maxCoord);
+        const uint3 c011 = min(base + uint3(0, 1, 1), maxCoord);
+        const uint3 c111 = min(base + uint3(1, 1, 1), maxCoord);
+
+        const float3 r00 = lerp(probeRadiance.Load(int4(c000, 0)).rgb, probeRadiance.Load(int4(c100, 0)).rgb, frac.x);
+        const float3 r10 = lerp(probeRadiance.Load(int4(c010, 0)).rgb, probeRadiance.Load(int4(c110, 0)).rgb, frac.x);
+        const float3 r01 = lerp(probeRadiance.Load(int4(c001, 0)).rgb, probeRadiance.Load(int4(c101, 0)).rgb, frac.x);
+        const float3 r11 = lerp(probeRadiance.Load(int4(c011, 0)).rgb, probeRadiance.Load(int4(c111, 0)).rgb, frac.x);
+        const float3 r0 = lerp(r00, r10, frac.y);
+        const float3 r1 = lerp(r01, r11, frac.y);
+        return lerp(r0, r1, frac.z);
     }
 
     /*******************************************************************
@@ -1048,6 +1079,23 @@ struct PathTracer
             setNRDSampleEmission(outputNRD, kUseNRDDemodulation, path, outSampleIdx, isPrimaryHit, attenuatedEmission, wasDeltaOnlyPathBeforeScattering);
             setNRDSampleReflectance(outputNRD, kUseNRDDemodulation, path, outSampleIdx, isPrimaryHit, sd, bsdfProperties, lobeTypes, wasDeltaOnlyPathBeforeScattering);
             setNRDPrimaryHitSeparatedRadiance(outputNRD, kUseNRDDemodulation, path, isPrimaryHit, outSampleIdx);
+        }
+
+        if (params.probeEnabled != 0 && path.getVertexIndex() == 1)
+        {
+            const float3 indirectAlbedo = bsdfProperties.diffuseReflectionAlbedo + bsdfProperties.diffuseTransmissionAlbedo;
+            const float3 probeColor = sampleProbeRadiance(sd.posW);
+            addToPathContribution(path, params.probeContributionScale * indirectAlbedo * probeColor);
+
+            if (kOutputGuideData)
+            {
+                float3 compressedColor = pow(probeColor / (probeColor + 1.0f), 0.454545f);
+                path.guideData.setIndirectAlbedo(compressedColor);
+                path.guideData.setReflectionPos(sd.posW);
+            }
+
+            path.terminate();
+            return;
         }
 
         // Check if this is the last path vertex.

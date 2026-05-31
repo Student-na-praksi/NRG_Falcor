@@ -93,6 +93,7 @@ private:
     void resetPrograms();
     void updatePrograms();
     void setFrameDim(const uint2 frameDim);
+    void updateProbeGridFromSceneBounds();
     void prepareResources(RenderContext* pRenderContext, const RenderData& renderData);
     void preparePathTracer(const RenderData& renderData);
     void resetLighting();
@@ -187,6 +188,11 @@ private:
     bool                            mOutputGuideData = false;   ///< True if guide data should be generated as outputs.
     bool                            mOutputNRDData = false;     ///< True if NRD diffuse/specular data should be generated as outputs.
     bool                            mOutputNRDAdditionalData = false;   ///< True if NRD data from delta and residual paths should be generated as designated outputs rather than being included in specular NRD outputs.
+    uint3                           mProbeGridSize = { 8, 4, 8 };
+    float3                          mProbeGridMin = { -1.f, -1.f, -1.f };
+    float3                          mProbeGridSpacing = { 1.f, 1.f, 1.f };
+    float                           mProbeScenePadding = 0.05f;
+    float                           mProbeContributionScale = 0.65f;
 
     ref<ComputePass>                mpGeneratePaths;            ///< Fullscreen compute pass generating paths starting at primary hits.
     ref<ComputePass>                mpResolvePass;              ///< Sample resolve pass.

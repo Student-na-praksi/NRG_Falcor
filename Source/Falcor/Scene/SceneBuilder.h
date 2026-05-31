@@ -640,6 +640,11 @@ namespace Falcor
         */
         NodeID addNode(const Node& node);
 
+        /** Get the current scene bounds in world space as estimated from the imported meshes and scene graph.
+            Useful while constructing debug overlays in Python before the final Scene object is built.
+        */
+        AABB getSceneBounds() const;
+
         /** Get how many nodes have been added to the scene graph.
             \return The node count.
         */

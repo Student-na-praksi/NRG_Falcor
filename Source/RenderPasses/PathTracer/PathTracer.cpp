@@ -43,6 +43,7 @@ namespace
     const std::string kInputMotionVectors = "mvec";
     const std::string kInputViewDir = "viewW";
     const std::string kInputSampleCount = "sampleCount";
+    const std::string kInputProbeRadiance = "probeRadiance";
 
     const Falcor::ChannelList kInputChannels =
     {
@@ -142,6 +143,8 @@ namespace
     const std::string kUseNRDDemodulation = "useNRDDemodulation";
 
     const std::string kUseSER = "useSER";
+    const std::string kProbeContributionScale = "probeContributionScale";
+    const std::string kProbeGridSize = "probeGridSize";
 
     const std::string kOutputSize = "outputSize";
     const std::string kFixedOutputSize = "fixedOutputSize";
@@ -388,6 +391,9 @@ RenderPassReflection PathTracer::reflect(const CompileData& compileData)
     const uint2 sz = RenderPassHelpers::calculateIOSize(mOutputSizeSelection, mFixedOutputSize, compileData.defaultTexDims);
 
     addRenderPassInputs(reflector, kInputChannels);
+    reflector.addInput(kInputProbeRadiance, "Probe radiance volume used for indirect GI.")
+        .texture3D()
+        .flags(RenderPassReflection::Field::Flags::Optional);
     addRenderPassOutputs(reflector, kOutputChannels, ResourceBindFlags::UnorderedAccess, sz);
     return reflector;
 }
@@ -414,6 +420,42 @@ void PathTracer::setFrameDim(const uint2 frameDim)
     }
 }
 
+void PathTracer::updateProbeGridFromSceneBounds()
+{
+    if (!mpScene)
+        return;
+
+    const AABB& bounds = mpScene->getSceneBounds();
+    if (!bounds.valid())
+    {
+        mProbeGridMin = float3(-1.f);
+        mProbeGridSpacing = float3(
+            mProbeGridSize.x > 1 ? 2.f / float(mProbeGridSize.x - 1) : 2.f,
+            mProbeGridSize.y > 1 ? 2.f / float(mProbeGridSize.y - 1) : 2.f,
+            mProbeGridSize.z > 1 ? 2.f / float(mProbeGridSize.z - 1) : 2.f
+        );
+    }
+    else
+    {
+        float3 minPoint = bounds.minPoint;
+        float3 maxPoint = bounds.maxPoint;
+        float3 extent = maxPoint - minPoint;
+
+        const float maxExtent = std::max(std::max(extent.x, extent.y), extent.z);
+        const float pad = std::max(0.01f, mProbeScenePadding * maxExtent);
+        minPoint -= float3(pad);
+        maxPoint += float3(pad);
+        extent = max(maxPoint - minPoint, float3(0.001f));
+
+        mProbeGridMin = minPoint;
+        mProbeGridSpacing = float3(
+            mProbeGridSize.x > 1 ? extent.x / float(mProbeGridSize.x - 1) : extent.x,
+            mProbeGridSize.y > 1 ? extent.y / float(mProbeGridSize.y - 1) : extent.y,
+            mProbeGridSize.z > 1 ? extent.z / float(mProbeGridSize.z - 1) : extent.z
+        );
+    }
+}
+
 void PathTracer::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
 {
     mUpdateFlagsConnection = {};
@@ -433,6 +475,7 @@ void PathTracer::setScene(RenderContext* pRenderContext, const ref<Scene>& pScen
     if (mpScene)
     {
         mUpdateFlagsConnection = mpScene->getUpdateFlagsSignal().connect([&](IScene::UpdateFlags flags) { mUpdateFlags |= flags; });
+        updateProbeGridFromSceneBounds();
 
         if (pScene->hasGeometryType(Scene::GeometryType::Custom))
         {
@@ -1116,10 +1159,20 @@ void PathTracer::bindShaderData(const ShaderVar& var, const RenderData& renderDa
         if (!pSampleCount) FALCOR_THROW("PathTracer: Missing sample count input texture");
     }
 
-    var["params"].setBlob(mParams);
+    ref<Texture> pProbeRadiance = renderData.getTexture(kInputProbeRadiance);
+    auto params = mParams;
+    params.probeEnabled = pProbeRadiance ? 1u : 0u;
+    params.probeGridSize = mProbeGridSize;
+    params.probeGridMin = mProbeGridMin;
+    params.probeGridSpacing = mProbeGridSpacing;
+    params.probeContributionScale = mProbeContributionScale;
+
+    var["params"].setBlob(params);
     var["vbuffer"] = renderData.getTexture(kInputVBuffer);
     var["viewDir"] = pViewDir; // Can be nullptr
     var["sampleCount"] = pSampleCount; // Can be nullptr
+    if (var.hasMember("probeRadiance"))
+        var["probeRadiance"] = pProbeRadiance; // Can be nullptr
     var["outputColor"] = renderData.getTexture(kOutputColor);
 
     if (useLightSampling && mpEmissiveSampler)

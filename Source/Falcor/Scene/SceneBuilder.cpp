@@ -1091,6 +1091,48 @@ namespace Falcor
         return newNodeID;
     }
 
+    AABB SceneBuilder::getSceneBounds() const
+    {
+        AABB bounds;
+
+        auto computeWorldTransform = [this](NodeID nodeID)
+        {
+            float4x4 transform = float4x4::identity();
+            while (nodeID != NodeID::Invalid())
+            {
+                FALCOR_ASSERT_LT(nodeID.get(), mSceneGraph.size());
+                transform = mul(mSceneGraph[nodeID.get()].transform, transform);
+                nodeID = mSceneGraph[nodeID.get()].parent;
+            }
+            return transform;
+        };
+
+        for (const auto& mesh : mMeshes)
+        {
+            if (mesh.instances.empty()) continue;
+
+            AABB meshBounds;
+            if (mesh.boundingBox.valid())
+            {
+                meshBounds = mesh.boundingBox;
+            }
+            else
+            {
+                for (const auto& v : mesh.staticData)
+                    meshBounds.include(v.position);
+            }
+
+            if (!meshBounds.valid()) continue;
+
+            for (auto nodeID : mesh.instances)
+            {
+                bounds.include(meshBounds.transform(computeWorldTransform(nodeID)));
+            }
+        }
+
+        return bounds;
+    }
+
     void SceneBuilder::addMeshInstance(NodeID nodeID, MeshID meshID)
     {
         FALCOR_CHECK(nodeID.get() < mSceneGraph.size(), "'nodeID' ({}) is out of range", nodeID);
@@ -2969,6 +3011,7 @@ namespace Falcor
         pybind11::class_<SceneBuilder> sceneBuilder(m, "SceneBuilder");
         sceneBuilder.def_property_readonly("flags", &SceneBuilder::getFlags);
         sceneBuilder.def_property_readonly("materials", &SceneBuilder::getMaterials);
+        sceneBuilder.def_property_readonly("bounds", &SceneBuilder::getSceneBounds, pybind11::return_value_policy::copy);
         sceneBuilder.def_property_readonly("gridVolumes", &SceneBuilder::getGridVolumes);
         sceneBuilder.def_property_readonly("volumes", &SceneBuilder::getGridVolumes); // PYTHONDEPRECATED
         sceneBuilder.def_property_readonly("lights", &SceneBuilder::getLights);
