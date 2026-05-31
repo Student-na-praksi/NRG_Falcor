@@ -1,4 +1,4 @@
-# m.loadScene("C:/Users/Uporabnik/Faks_local/NRG/Falcor/media/Arcade/Arcade.pyscene")
+[]# m.loadScene("C:/Users/Uporabnik/Faks_local/NRG/Falcor/media/Arcade/Arcade.pyscene")
 from falcor import *
 
 def render_graph_PathTracer():
