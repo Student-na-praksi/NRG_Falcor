@@ -34,11 +34,14 @@ private:
     void updateGridFromSceneBounds();
     void updateProbes(RenderContext* pRenderContext);
     void updateProbeDebugMaterials(const float4* pProbeData);
+    void runPropagation(RenderContext* pRenderContext);
 
     ref<Scene> mpScene;
     ref<ComputePass> mpProbeUpdatePass;
+    ref<ComputePass> mpProbePropagationPass;
     ref<ComputePass> mpProbeVisualizePass;
     ref<Texture> mpProbeRadiance;
+    ref<Texture> mpProbePropagationScratch;
 
     uint3 mGridSize = { 8, 4, 8 };
     float3 mGridMin = { -1.f, -1.f, -1.f };
@@ -49,6 +52,7 @@ private:
     float mRayBias = 0.03f;
     float mMaxRayDistance = 1e6f;
     uint32_t mRaysPerProbe = 12;
+    uint32_t mPropagationIterations = 8;
     uint2 mFrameDim = { 0, 0 };
 
     bool mAutoFitToScene = true;

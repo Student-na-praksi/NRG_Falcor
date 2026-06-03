@@ -11,6 +11,7 @@
 namespace
 {
 const char kProbeUpdateFile[] = "RenderPasses/RadianceProbePass/ProbeUpdate.cs.slang";
+const char kProbePropagationFile[] = "RenderPasses/RadianceProbePass/ProbePropagation.cs.slang";
 const char kProbeVisualizeFile[] = "RenderPasses/RadianceProbePass/ProbeVisualize.cs.slang";
 
 const char kInput[] = "input";
@@ -25,6 +26,7 @@ const char kGridSpacing[] = "gridSpacing";
 const char kProbeRadius[] = "probeRadius";
 const char kProbeContributionScale[] = "probeContributionScale";
 const char kRaysPerProbe[] = "raysPerProbe";
+const char kPropagationIterations[] = "propagationIterations";
 const char kRayBias[] = "rayBias";
 const char kMaxRayDistance[] = "maxRayDistance";
 const char kVisualizeProbes[] = "visualizeProbes";
@@ -93,6 +95,8 @@ void RadianceProbePass::parseProperties(const Properties& props)
             mProbeContributionScale = value;
         else if (key == kRaysPerProbe)
             mRaysPerProbe = clamp((uint32_t)value, 1u, 12u);
+        else if (key == kPropagationIterations)
+            mPropagationIterations = clamp((uint32_t)value, 0u, 64u);
         else if (key == kRayBias)
             mRayBias = value;
         else if (key == kMaxRayDistance)
@@ -116,6 +120,7 @@ Properties RadianceProbePass::getProperties() const
     props[kProbeRadius] = mProbeRadius;
     props[kProbeContributionScale] = mProbeContributionScale;
     props[kRaysPerProbe] = mRaysPerProbe;
+    props[kPropagationIterations] = mPropagationIterations;
     props[kRayBias] = mRayBias;
     props[kMaxRayDistance] = mMaxRayDistance;
     props[kVisualizeProbes] = mVisualizeProbes;
@@ -155,8 +160,10 @@ void RadianceProbePass::setScene(RenderContext* pRenderContext, const ref<Scene>
 {
     mpScene = pScene;
     mpProbeUpdatePass = nullptr;
+    mpProbePropagationPass = nullptr;
     mpProbeVisualizePass = nullptr;
     mpProbeRadiance = nullptr;
+    mpProbePropagationScratch = nullptr;
     mNeedsProbeUpdate = true;
 
     if (mpScene)
@@ -180,6 +187,12 @@ void RadianceProbePass::createPrograms()
     updateDesc.addTypeConformances(mpScene->getTypeConformances());
     mpProbeUpdatePass = ComputePass::create(mpDevice, updateDesc, defines);
 
+    ProgramDesc propagationDesc;
+    propagationDesc.addShaderModules(mpScene->getShaderModules());
+    propagationDesc.addShaderLibrary(kProbePropagationFile).csEntry("main");
+    propagationDesc.addTypeConformances(mpScene->getTypeConformances());
+    mpProbePropagationPass = ComputePass::create(mpDevice, propagationDesc, mpScene->getSceneDefines());
+
     ProgramDesc visualizeDesc;
     visualizeDesc.addShaderModules(mpScene->getShaderModules());
     visualizeDesc.addShaderLibrary(kProbeVisualizeFile).csEntry("main");
@@ -191,6 +204,15 @@ void RadianceProbePass::createProbeTexture()
 {
     mGridSize = sanitizeGridSize(mGridSize);
     mpProbeRadiance = mpDevice->createTexture3D(
+        mGridSize.x,
+        mGridSize.y,
+        mGridSize.z,
+        ResourceFormat::RGBA32Float,
+        1,
+        nullptr,
+        ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
+    );
+    mpProbePropagationScratch = mpDevice->createTexture3D(
         mGridSize.x,
         mGridSize.y,
         mGridSize.z,
@@ -261,6 +283,32 @@ void RadianceProbePass::updateProbes(RenderContext* pRenderContext)
     mpProbeUpdatePass->execute(pRenderContext, mGridSize);
 }
 
+void RadianceProbePass::runPropagation(RenderContext* pRenderContext)
+{
+    if (!mpScene || !mpProbePropagationPass || !mpProbeRadiance || !mpProbePropagationScratch || mPropagationIterations == 0)
+        return;
+
+    ref<Texture> pSrc = mpProbeRadiance;
+    ref<Texture> pDst = mpProbePropagationScratch;
+
+    ShaderVar var = mpProbePropagationPass->getRootVar()["CB"];
+    var["gGridSize"] = mGridSize;
+    var["gPropagationStrength"] = 0.35f;
+
+    for (uint32_t i = 0; i < mPropagationIterations; ++i)
+    {
+        mpProbePropagationPass->getRootVar()["gProbeRadianceIn"] = pSrc;
+        mpProbePropagationPass->getRootVar()["gProbeRadianceOut"] = pDst;
+        mpProbePropagationPass->execute(pRenderContext, mGridSize);
+        std::swap(pSrc, pDst);
+    }
+
+    if (pSrc.get() != mpProbeRadiance.get())
+    {
+        pRenderContext->copyResource(mpProbeRadiance.get(), pSrc.get());
+    }
+}
+
 void RadianceProbePass::updateProbeDebugMaterials(const float4* pProbeData)
 {
     if (!mpScene || !pProbeData)
@@ -324,6 +372,7 @@ void RadianceProbePass::execute(RenderContext* pRenderContext, const RenderData&
     if (mUpdateEveryFrame || mNeedsProbeUpdate)
     {
         updateProbes(pRenderContext);
+        runPropagation(pRenderContext);
         const auto probeBlobSize = mpProbeRadiance->getSubresourceLayout(0).getTotalByteSize();
         std::vector<float4> probeData(probeBlobSize / sizeof(float4));
         mpProbeRadiance->getSubresourceBlob(0, probeData.data(), probeBlobSize);
@@ -392,6 +441,7 @@ void RadianceProbePass::renderUI(Gui::Widgets& widget)
     widget.var("Ray bias", mRayBias, 0.f, 10.f);
     widget.var("Max ray distance", mMaxRayDistance, 0.001f, 1e9f);
     widget.var("Rays per probe", mRaysPerProbe, 1u, 12u);
+    widget.var("Propagation iterations", mPropagationIterations, 0u, 64u);
     widget.checkbox("Visualize probes", mVisualizeProbes);
     widget.checkbox("Update every frame", mUpdateEveryFrame);
 

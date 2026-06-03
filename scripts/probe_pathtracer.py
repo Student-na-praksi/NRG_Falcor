@@ -20,8 +20,8 @@ def render_graph_ProbePathTracer():
         {
             "samplesPerPixel": 1,
             "maxSurfaceBounces": 0,
-            "maxDiffuseBounces": 0,
-            "maxSpecularBounces": 0,
+            "maxDiffuseBounces": 1,
+            "maxSpecularBounces": 1,
             "useNEE": True,
             "useMIS": True,
         },
@@ -36,8 +36,9 @@ def render_graph_ProbePathTracer():
                 "autoFitToScene": True,
                 "visualizeProbes": VISUALISE_PROBES,
                 "updateEveryFrame": False,
-                "probeContributionScale": 0.65,
+                "probeContributionScale": 1,
                 "raysPerProbe": 8,
+                "propagationIterations": 8,
             },
         )
         g.addPass(probes, "RadianceProbePass")
