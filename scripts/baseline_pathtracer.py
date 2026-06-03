@@ -17,9 +17,9 @@ def render_graph_PathTracer():
     # Create the PathTracer pass
     PathTracer = createPass("PathTracer", {
         'samplesPerPixel': 1,
-        'maxSurfaceBounces': 3,
-        'maxDiffuseBounces': 3, #later set to 1
-        'maxSpecularBounces': 3,
+        'maxSurfaceBounces': 0,
+        'maxDiffuseBounces': 1,
+        'maxSpecularBounces': 1,
         'useNEE': True,
         'useMIS': True
     })

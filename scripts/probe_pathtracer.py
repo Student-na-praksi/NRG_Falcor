@@ -32,13 +32,13 @@ def render_graph_ProbePathTracer():
         probes = createPass(
             "RadianceProbePass",
             {
-                "gridSize": uint3(20, 10, 20),
+                "gridSize": uint3(4, 4, 4),
                 "autoFitToScene": True,
                 "visualizeProbes": VISUALISE_PROBES,
                 "updateEveryFrame": False,
-                "probeContributionScale": 1,
+                "probeContributionScale": 0.25,
                 "raysPerProbe": 8,
-                "propagationIterations": 8,
+                "propagationIterations": 6,
             },
         )
         g.addPass(probes, "RadianceProbePass")
